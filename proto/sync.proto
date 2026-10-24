@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package sync;
+
+service SyncService {
+  rpc SyncData(SyncRequest) returns (SyncResponse);
+}
+
+message SyncRequest {
+  string data = 1;
+}
+
+message SyncResponse {
+  string status = 1;
+}
