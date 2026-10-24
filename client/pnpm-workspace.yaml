@@ -1,0 +1,6 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+minimumReleaseAgeExclude:
+  - '@tanstack/react-router@1.170.46'
+  - '@tanstack/router-core@1.171.39'
