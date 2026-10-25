@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package wudang.repository.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// RepositoryService manages both Wudang-hosted bare Git repositories and external
+// providers such as GitHub. Smart Git transport is deployed separately from this
+// control-plane service.
+service RepositoryService {
+  rpc CreateHostedRepository(CreateHostedRepositoryRequest) returns (Repository);
+  rpc GetRepository(GetRepositoryRequest) returns (Repository);
+  rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
+}
+
+enum RepositoryProvider {
+  REPOSITORY_PROVIDER_UNSPECIFIED = 0;
+  REPOSITORY_PROVIDER_WUDANG = 1;
+  REPOSITORY_PROVIDER_GITHUB = 2;
+}
+
+message Repository {
+  string repository_id = 1;
+  string organization_id = 2;
+  string name = 3;
+  RepositoryProvider provider = 4;
+  string default_branch = 5;
+  string clone_url = 6;
+  bool empty = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+message CreateHostedRepositoryRequest {
+  string request_id = 1;
+  string organization_id = 2;
+  string name = 3;
+  string default_branch = 4;
+}
+
+message GetRepositoryRequest {
+  string repository_id = 1;
+}
+
+message ListRepositoriesRequest {
+  string organization_id = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListRepositoriesResponse {
+  repeated Repository repositories = 1;
+  string next_page_token = 2;
+}

@@ -1,0 +1,211 @@
+syntax = "proto3";
+
+package wudang.collab.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// CollaborationService synchronizes one CRDT text document per bidirectional stream.
+// The first client frame MUST be OpenDocument. File-tree operations are intentionally
+// outside this protocol until rename and delete semantics have their own CRDT model.
+service CollaborationService {
+  rpc SyncDocument(stream ClientCollabMessage) returns (stream ServerCollabMessage);
+  rpc GetDocumentSnapshot(GetDocumentSnapshotRequest) returns (DocumentSnapshot);
+}
+
+message DeltaId {
+  // Stable random identifier for an installation or runner replica.
+  string replica_id = 1;
+  // Strictly increasing within replica_id. A replica MUST persist its next sequence.
+  uint64 sequence = 2;
+}
+
+message GitVersion {
+  string repository_id = 1;
+  string commit_oid = 2;
+  string path = 3;
+  string blob_oid = 4;
+}
+
+// A causal version is a Git base plus the antichain of CRDT heads visible to a replica.
+// The frontier is sorted canonically by replica_id then sequence before hashing.
+message CausalVersion {
+  GitVersion base = 1;
+  repeated DeltaId frontier = 2;
+  string digest = 3;
+}
+
+message Document {
+  string document_id = 1;
+  string workspace_id = 2;
+  string file_id = 3;
+  string path = 4;
+  GitVersion base = 5;
+}
+
+message TextEdit {
+  // Half-open UTF-8 byte range in TextDelta.based_on, never in the receiver's head.
+  uint64 start_utf8 = 1;
+  uint64 end_utf8 = 2;
+  string inserted_text = 3;
+}
+
+message Attribution {
+  string actor_id = 1;
+  string agent_id = 2;
+  string run_id = 3;
+  string prompt_message_id = 4;
+}
+
+message TextDelta {
+  string document_id = 1;
+  DeltaId delta_id = 2;
+  CausalVersion based_on = 3;
+  repeated TextEdit edits = 4;
+  Attribution attribution = 5;
+  string request_id = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+// Identifies the immutable fragment that originally introduced text.
+message FragmentRef {
+  oneof origin {
+    GitFragment git = 1;
+    DeltaFragment delta = 2;
+  }
+}
+
+message GitFragment {
+  string blob_oid = 1;
+}
+
+message DeltaFragment {
+  DeltaId delta_id = 1;
+  // A TextDelta may contain multiple insertions.
+  uint32 insertion_index = 2;
+}
+
+enum AnchorBias {
+  ANCHOR_BIAS_UNSPECIFIED = 0;
+  ANCHOR_BIAS_LEFT = 1;
+  ANCHOR_BIAS_RIGHT = 2;
+}
+
+// A StableAnchor survives concurrent insertion and deletion because it refers to an
+// immutable origin fragment rather than a row, column, or current-buffer offset.
+message StableAnchor {
+  FragmentRef fragment = 1;
+  uint64 offset_utf8 = 2;
+  AnchorBias bias = 3;
+}
+
+message AnchorRange {
+  StableAnchor start = 1;
+  StableAnchor end = 2;
+}
+
+message Selection {
+  AnchorRange range = 1;
+  bool reversed = 2;
+}
+
+message Presence {
+  string document_id = 1;
+  string user_id = 2;
+  string device_id = 3;
+  string display_name = 4;
+  repeated Selection selections = 5;
+  google.protobuf.Timestamp observed_at = 6;
+}
+
+message OpenDocument {
+  string document_id = 1;
+  string workspace_id = 2;
+  string replica_id = 3;
+  string device_id = 4;
+  CausalVersion known_version = 5;
+}
+
+message DeltaAck {
+  DeltaId delta_id = 1;
+  CausalVersion accepted_version = 2;
+}
+
+message ClientAck {
+  CausalVersion applied_version = 1;
+}
+
+message Heartbeat {
+  uint64 nonce = 1;
+}
+
+message ClientCollabMessage {
+  oneof payload {
+    OpenDocument open = 1;
+    TextDelta delta = 2;
+    Presence presence = 3;
+    ClientAck ack = 4;
+    Heartbeat heartbeat = 5;
+  }
+}
+
+message DocumentReady {
+  Document document = 1;
+  CausalVersion version = 2;
+
+  oneof catch_up {
+    DeltaBatch missing_deltas = 3;
+    DocumentSnapshot snapshot = 4;
+  }
+}
+
+message DeltaBatch {
+  repeated TextDelta deltas = 1;
+}
+
+enum ResyncReason {
+  RESYNC_REASON_UNSPECIFIED = 0;
+  RESYNC_REASON_HISTORY_COMPACTED = 1;
+  RESYNC_REASON_BASE_CHANGED = 2;
+  RESYNC_REASON_INVALID_FRONTIER = 3;
+}
+
+message ResyncRequired {
+  ResyncReason reason = 1;
+  CausalVersion server_version = 2;
+  string message = 3;
+}
+
+message CollabError {
+  string code = 1;
+  string message = 2;
+  bool retryable = 3;
+}
+
+message ServerCollabMessage {
+  oneof payload {
+    DocumentReady ready = 1;
+    TextDelta delta = 2;
+    DeltaAck delta_ack = 3;
+    Presence presence = 4;
+    ResyncRequired resync_required = 5;
+    Heartbeat heartbeat = 6;
+    CollabError error = 7;
+  }
+}
+
+message GetDocumentSnapshotRequest {
+  string document_id = 1;
+  CausalVersion preferred_version = 2;
+}
+
+// The un-compacted MVP snapshot is self-contained: base text plus all deltas needed to
+// reconstruct the fragment index and tombstones. A future checkpoint format may move the
+// same state to object storage without changing TextDelta semantics.
+message DocumentSnapshot {
+  Document document = 1;
+  CausalVersion version = 2;
+  string base_text = 3;
+  repeated TextDelta deltas = 4;
+  string rendered_text = 5;
+  google.protobuf.Timestamp generated_at = 6;
+}

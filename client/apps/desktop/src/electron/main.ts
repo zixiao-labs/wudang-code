@@ -10,7 +10,7 @@ async function createWindow() {
     width: 1200,
     height: 800,
     webPreferences: {
-      preload: path.resolve(__dirname, 'preload.mjs'),
+      preload: path.resolve(__dirname, 'preload.cjs'),
       contextIsolation: true,
       sandbox: true,
     },

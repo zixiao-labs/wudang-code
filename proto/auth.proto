@@ -1,26 +1,116 @@
 syntax = "proto3";
 
-package auth;
+package wudang.auth.v1;
+
+import "google/protobuf/timestamp.proto";
 
 service AuthService {
-  rpc Login(LoginRequest) returns (LoginResponse);
-  rpc Register(RegisterRequest) returns (RegisterResponse);
+  // Creates a local account for standalone or intranet deployments.
+  rpc RegisterLocal(RegisterLocalRequest) returns (Session);
+
+  // Authenticates a local account. Passwords are transported only over TLS and
+  // stored as Argon2id hashes.
+  rpc LoginLocal(LoginLocalRequest) returns (Session);
+
+  // Starts an OAuth 2.1 authorization-code flow with PKCE.
+  rpc BeginOAuth(BeginOAuthRequest) returns (BeginOAuthResponse);
+
+  // Exchanges the provider callback for a Wudang session.
+  rpc CompleteOAuth(CompleteOAuthRequest) returns (Session);
+
+  // Rotates a refresh token and returns a new short-lived session.
+  rpc RefreshSession(RefreshSessionRequest) returns (Session);
+
+  // Revokes the current device session. The call is idempotent.
+  rpc RevokeSession(RevokeSessionRequest) returns (RevokeSessionResponse);
+
+  rpc GetCurrentUser(GetCurrentUserRequest) returns (User);
 }
 
-message LoginRequest {
-  string username = 1;
-  string password = 2;
+enum OAuthProvider {
+  OAUTH_PROVIDER_UNSPECIFIED = 0;
+  OAUTH_PROVIDER_GITHUB = 1;
 }
 
-message LoginResponse {
-  string token = 1;
+message ClientInfo {
+  string device_id = 1;
+  string device_name = 2;
+  string app_version = 3;
+  string platform = 4;
 }
 
-message RegisterRequest {
-  string username = 1;
-  string password = 2;
+message RegisterLocalRequest {
+  string request_id = 1;
+  string email = 2;
+  string password = 3;
+  string display_name = 4;
+  ClientInfo client = 5;
 }
 
-message RegisterResponse {
-  string token = 1;
+message LoginLocalRequest {
+  string request_id = 1;
+  string email = 2;
+  string password = 3;
+  ClientInfo client = 4;
+}
+
+message BeginOAuthRequest {
+  string request_id = 1;
+  OAuthProvider provider = 2;
+  string redirect_uri = 3;
+  string pkce_code_challenge = 4;
+  ClientInfo client = 5;
+}
+
+message BeginOAuthResponse {
+  string flow_id = 1;
+  string authorization_url = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message CompleteOAuthRequest {
+  string request_id = 1;
+  string flow_id = 2;
+  string authorization_code = 3;
+  string pkce_code_verifier = 4;
+}
+
+message RefreshSessionRequest {
+  string request_id = 1;
+  string refresh_token = 2;
+  ClientInfo client = 3;
+}
+
+message RevokeSessionRequest {
+  string request_id = 1;
+  string refresh_token = 2;
+}
+
+message RevokeSessionResponse {
+  bool revoked = 1;
+}
+
+message GetCurrentUserRequest {}
+
+message Session {
+  string session_id = 1;
+  string access_token = 2;
+  string refresh_token = 3;
+  string token_type = 4;
+  google.protobuf.Timestamp access_token_expires_at = 5;
+  User user = 6;
+}
+
+message User {
+  string user_id = 1;
+  string display_name = 2;
+  string avatar_url = 3;
+  repeated ExternalIdentity external_identities = 4;
+  string email = 5;
+}
+
+message ExternalIdentity {
+  OAuthProvider provider = 1;
+  string provider_user_id = 2;
+  string login = 3;
 }

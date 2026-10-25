@@ -1,15 +1,180 @@
 syntax = "proto3";
 
-package sync;
+package wudang.sync.v1;
+
+import "google/protobuf/timestamp.proto";
 
 service SyncService {
-  rpc SyncData(SyncRequest) returns (SyncResponse);
+  // Replays durable domain events after a cursor and then remains open for live events.
+  rpc SubscribeEvents(SubscribeEventsRequest) returns (stream SyncEvent);
+
+  // Returns a compact projection when the requested cursor has expired.
+  rpc GetSnapshot(GetSnapshotRequest) returns (SyncSnapshot);
+
+  // Records the latest cursor durably consumed by a device.
+  rpc AcknowledgeCursor(AcknowledgeCursorRequest) returns (AcknowledgeCursorResponse);
 }
 
-message SyncRequest {
-  string data = 1;
+message SyncScope {
+  oneof scope {
+    string organization_id = 1;
+    string project_id = 2;
+    string thread_id = 3;
+    string workspace_id = 4;
+  }
 }
 
-message SyncResponse {
-  string status = 1;
+message EventCursor {
+  string stream_id = 1;
+  uint64 sequence = 2;
+}
+
+message SubscribeEventsRequest {
+  SyncScope scope = 1;
+  EventCursor after_cursor = 2;
+  string device_id = 3;
+}
+
+message GetSnapshotRequest {
+  SyncScope scope = 1;
+}
+
+message AcknowledgeCursorRequest {
+  string request_id = 1;
+  string device_id = 2;
+  SyncScope scope = 3;
+  EventCursor cursor = 4;
+}
+
+message AcknowledgeCursorResponse {
+  EventCursor acknowledged_cursor = 1;
+}
+
+message SyncEvent {
+  string event_id = 1;
+  EventCursor cursor = 2;
+  SyncScope scope = 3;
+  string actor_id = 4;
+  string trace_id = 5;
+  google.protobuf.Timestamp occurred_at = 6;
+
+  oneof payload {
+    ThreadChanged thread_changed = 10;
+    MessageCreated message_created = 11;
+    RunChanged run_changed = 12;
+    ToolCallChanged tool_call_changed = 13;
+    ChangeSetChanged change_set_changed = 14;
+    DocumentHeadChanged document_head_changed = 15;
+    ReviewChanged review_changed = 16;
+    GitHubResourceChanged github_resource_changed = 17;
+  }
+}
+
+message ThreadChanged {
+  string thread_id = 1;
+  uint64 revision = 2;
+  string title = 3;
+  ThreadState state = 4;
+}
+
+enum ThreadState {
+  THREAD_STATE_UNSPECIFIED = 0;
+  THREAD_STATE_ACTIVE = 1;
+  THREAD_STATE_ARCHIVED = 2;
+}
+
+message MessageCreated {
+  string thread_id = 1;
+  string message_id = 2;
+  uint64 thread_revision = 3;
+  MessageAuthor author = 4;
+  string author_id = 5;
+  string markdown = 6;
+}
+
+enum MessageAuthor {
+  MESSAGE_AUTHOR_UNSPECIFIED = 0;
+  MESSAGE_AUTHOR_USER = 1;
+  MESSAGE_AUTHOR_AGENT = 2;
+  MESSAGE_AUTHOR_SYSTEM = 3;
+}
+
+message RunChanged {
+  string thread_id = 1;
+  string run_id = 2;
+  RunState state = 3;
+  string status_message = 4;
+}
+
+enum RunState {
+  RUN_STATE_UNSPECIFIED = 0;
+  RUN_STATE_QUEUED = 1;
+  RUN_STATE_RUNNING = 2;
+  RUN_STATE_WAITING_FOR_INPUT = 3;
+  RUN_STATE_SUCCEEDED = 4;
+  RUN_STATE_FAILED = 5;
+  RUN_STATE_CANCELLED = 6;
+}
+
+message ToolCallChanged {
+  string run_id = 1;
+  string tool_call_id = 2;
+  string tool_name = 3;
+  ToolCallState state = 4;
+  string summary = 5;
+  string change_set_id = 6;
+}
+
+enum ToolCallState {
+  TOOL_CALL_STATE_UNSPECIFIED = 0;
+  TOOL_CALL_STATE_PROPOSED = 1;
+  TOOL_CALL_STATE_RUNNING = 2;
+  TOOL_CALL_STATE_SUCCEEDED = 3;
+  TOOL_CALL_STATE_FAILED = 4;
+  TOOL_CALL_STATE_REJECTED = 5;
+}
+
+message ChangeSetChanged {
+  string workspace_id = 1;
+  string change_set_id = 2;
+  uint64 base_revision = 3;
+  uint64 head_revision = 4;
+  uint32 files_changed = 5;
+  uint32 additions = 6;
+  uint32 deletions = 7;
+}
+
+message DocumentHeadChanged {
+  string workspace_id = 1;
+  string document_id = 2;
+  string version_digest = 3;
+}
+
+message ReviewChanged {
+  string change_set_id = 1;
+  string review_id = 2;
+  string state = 3;
+}
+
+message GitHubResourceChanged {
+  string project_id = 1;
+  string repository_id = 2;
+  string resource_kind = 3;
+  string external_id = 4;
+  string url = 5;
+  string state = 6;
+}
+
+message SyncSnapshot {
+  SyncScope scope = 1;
+  EventCursor cursor = 2;
+  repeated ResourceRevision resources = 3;
+  google.protobuf.Timestamp generated_at = 4;
+}
+
+message ResourceRevision {
+  string resource_type = 1;
+  string resource_id = 2;
+  uint64 revision = 3;
+  string etag = 4;
 }

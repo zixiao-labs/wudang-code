@@ -1,0 +1,144 @@
+syntax = "proto3";
+
+package wudang.changes.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service ChangeService {
+  rpc PreviewPatch(PreviewPatchRequest) returns (PatchPreview);
+  rpc ApplyPatch(ApplyPatchRequest) returns (ApplyPatchResponse);
+  rpc GetChangeSet(GetChangeSetRequest) returns (ChangeSet);
+  rpc CreateReviewComment(CreateReviewCommentRequest) returns (ReviewComment);
+  rpc ResolveReviewComment(ResolveReviewCommentRequest) returns (ReviewComment);
+}
+
+message DiffStats {
+  uint32 files_changed = 1;
+  uint32 additions = 2;
+  uint32 deletions = 3;
+}
+
+enum FileChangeKind {
+  FILE_CHANGE_KIND_UNSPECIFIED = 0;
+  FILE_CHANGE_KIND_ADDED = 1;
+  FILE_CHANGE_KIND_MODIFIED = 2;
+  FILE_CHANGE_KIND_DELETED = 3;
+  FILE_CHANGE_KIND_RENAMED = 4;
+  FILE_CHANGE_KIND_MODE_CHANGED = 5;
+}
+
+enum DiffLineKind {
+  DIFF_LINE_KIND_UNSPECIFIED = 0;
+  DIFF_LINE_KIND_CONTEXT = 1;
+  DIFF_LINE_KIND_ADDED = 2;
+  DIFF_LINE_KIND_DELETED = 3;
+}
+
+message DiffLine {
+  DiffLineKind kind = 1;
+  optional uint32 old_line = 2;
+  optional uint32 new_line = 3;
+  string text = 4;
+  bool no_newline_at_end = 5;
+}
+
+message DiffHunk {
+  string hunk_id = 1;
+  uint32 old_start = 2;
+  uint32 old_lines = 3;
+  uint32 new_start = 4;
+  uint32 new_lines = 5;
+  repeated DiffLine lines = 6;
+}
+
+message FileChange {
+  string file_change_id = 1;
+  string file_id = 2;
+  FileChangeKind kind = 3;
+  string old_path = 4;
+  string new_path = 5;
+  string old_mode = 6;
+  string new_mode = 7;
+  bool binary = 8;
+  repeated DiffHunk hunks = 9;
+}
+
+message ChangeSet {
+  string change_set_id = 1;
+  string workspace_id = 2;
+  uint64 base_revision = 3;
+  uint64 head_revision = 4;
+  string base_commit_oid = 5;
+  string created_by_run_id = 6;
+  repeated FileChange files = 7;
+  DiffStats stats = 8;
+  google.protobuf.Timestamp created_at = 9;
+}
+
+message PreviewPatchRequest {
+  string request_id = 1;
+  string workspace_id = 2;
+  uint64 expected_revision = 3;
+  string unified_patch = 4;
+  string tool_call_id = 5;
+}
+
+message PatchPreview {
+  string patch_id = 1;
+  ChangeSet proposed_change_set = 2;
+  repeated string warnings = 3;
+}
+
+message ApplyPatchRequest {
+  string request_id = 1;
+  string patch_id = 2;
+  string workspace_id = 3;
+  uint64 expected_revision = 4;
+}
+
+message ApplyPatchResponse {
+  ChangeSet change_set = 1;
+}
+
+message GetChangeSetRequest {
+  string change_set_id = 1;
+}
+
+enum DiffSide {
+  DIFF_SIDE_UNSPECIFIED = 0;
+  DIFF_SIDE_OLD = 1;
+  DIFF_SIDE_NEW = 2;
+}
+
+// Review anchors point into an immutable ChangeSet, not a mutable editor buffer.
+message DiffAnchor {
+  string change_set_id = 1;
+  string file_change_id = 2;
+  string hunk_id = 3;
+  DiffSide side = 4;
+  uint32 line = 5;
+  uint32 start_utf8 = 6;
+  uint32 end_utf8 = 7;
+}
+
+message ReviewComment {
+  string comment_id = 1;
+  DiffAnchor anchor = 2;
+  string author_id = 3;
+  string markdown = 4;
+  bool resolved = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp resolved_at = 7;
+}
+
+message CreateReviewCommentRequest {
+  string request_id = 1;
+  DiffAnchor anchor = 2;
+  string markdown = 3;
+}
+
+message ResolveReviewCommentRequest {
+  string request_id = 1;
+  string comment_id = 2;
+  bool resolved = 3;
+}

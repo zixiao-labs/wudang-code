@@ -1,0 +1,256 @@
+# 客户端编辑器架构
+
+桌面端提供两种互补模式：
+
+- **Edit 模式**：直接编辑 Workspace 中的文件；
+- **Agent 模式**：围绕 Thread 驱动 Agent、观察 Tool Call、审阅 Change Set 和继续追问。
+
+两种模式必须共享同一个 Workspace、Document、selection 和 revision 模型。它们是同一份工作
+的两个视图，而不是两个编辑器或两套状态。
+
+## 当前实现选择
+
+第一版 Renderer 使用 CodeMirror 6：
+
+- 支持输入、IME、选区、多光标、撤销、滚动和无障碍；
+- JavaScript/TypeScript 语法解析与高亮；
+- `@codemirror/merge` 渲染 Agent `apply_patch` 产生的 unified diff；
+- 通过 CSS variables 对齐 HeroUI v3 主题；
+- IBM Plex Mono 由 `@fontsource/ibm-plex-mono` 随客户端打包，不依赖在线字体服务。
+
+这是一条可替换的表现层。CRDT、Workspace、Change Set 和 Review Anchor 不依赖 CodeMirror，
+未来可以把文本内核或 renderer 替换为原生实现。
+
+## Edit 与 Agent 模式
+
+### Edit 模式
+
+Edit 模式至少包含：
+
+- 文件树、文件 tab 和 dirty 状态；
+- 可编辑 buffer；
+- UTF-8 offset 与 UTF-16 line/column 状态；
+- syntax highlighting；
+- 与 Collaboration stream 相连的远端编辑和 Presence；
+- 保存到 Checkout 与发布 CRDT delta 的明确状态。
+
+本地键入先进入编辑器事务，再转换成基于当前 causal version 的 TextDelta。磁盘写入和网络确认
+是两个不同结果：网络暂时断开时，本地 write-ahead log 仍要保存未确认 delta。
+
+### Agent 模式
+
+Agent 模式至少包含：
+
+- Thread 消息与 Run 状态；
+- Tool Call 卡片；
+- `apply_patch` 的 proposed、applying、applied、failed 状态；
+- 文件数、增删行和验证结果；
+- 点击 Tool Call 后展开的不可变 Change Set diff；
+- 文件、hunk、行级评论；
+- “Open in Edit”跳转到 Change Set 的 head version。
+
+Agent 模式不把 patch 当终端日志显示。Host 规范化 before/after，服务端生成
+`ChangeSet → FileChange → DiffHunk → DiffLine`。Diff renderer 使用 base/head 文本，Review
+Anchor 使用 Change Set 行坐标。
+
+第一版使用 unified diff；split diff 可以复用同一个 Change Set 模型增加，不需要修改协议。
+
+## 文本数据结构
+
+### 为什么不能长期使用一个 String
+
+连续 String 在文件中间插入或删除时可能移动大量内存；按行跳转、最长行、UTF-8/UTF-16
+转换也需要额外扫描。大文件、多光标、后台解析和协作 snapshot 会放大这些成本。
+
+### Rope 与 SumTree
+
+长期内核建议采用持久化 Rope，底层是带摘要的 B+ tree（SumTree）：
+
+```text
+SumTree<Chunk>
+  leaf: [Chunk, Chunk, ...] + item summaries
+  internal: child trees + child summaries
+```
+
+每个 TextSummary 至少维护：
+
+- UTF-8 byte length；
+- UTF-16 code-unit length；
+- Unicode scalar count；
+- newline count；
+- 最后一行的 UTF-8、UTF-16 与 scalar 长度；
+- 最长行及其长度。
+
+摘要可以组合，因此从 byte offset 查 Point、从 Point 查 UTF-16 Point、查第 N 行和最长行都能
+沿树在 $O(\log n)$ 时间完成，而不是扫描完整文本。
+
+节点使用 copy-on-write 与结构共享：
+
+- 编辑只复制根到受影响叶子的路径；
+- snapshot 只是持有另一个 root；
+- Tree-sitter、diff、LSP 和保存任务可以在后台读取稳定 snapshot；
+- 前台继续输入，不需要复制整份文档或持有全局锁。
+
+该设计参考 [Rope & SumTree](https://zed.dev/blog/zed-decoded-rope-sumtree)。当前 Web 客户端
+先使用 CodeMirror 的文档结构；自研 Rope 前必须用真实大文件、随机编辑和 snapshot workload
+建立基准，不能只凭理论替换成熟内核。
+
+## 文本坐标系统
+
+禁止用一个无类型 `number` 同时代表所有位置。至少定义以下 newtype 或 protobuf message：
+
+| 坐标 | 含义 | 使用场景 |
+| --- | --- | --- |
+| `ByteOffsetUtf8` | 从文档开头计算的 UTF-8 bytes | 磁盘、Git、CRDT TextEdit |
+| `PointUtf8` | row + 该行 UTF-8 byte column | 内部文本算法 |
+| `OffsetUtf16` | UTF-16 code units | DOM、CodeMirror、部分 API |
+| `PointUtf16` | row + UTF-16 column | Language Server Protocol |
+| `DisplayPoint` | 经过折叠、tab、inlay、wrap 和 block 后的位置 | 屏幕 hit testing、光标绘制 |
+| `StableAnchor` | 指向不可变来源 fragment 的逻辑位置 | CRDT Presence、评论、后台任务 |
+
+JavaScript 的 `string.length` 和 DOM selection 使用 UTF-16 code units；Rust `str` range 与 Git
+blob 更接近 UTF-8 bytes；用户看到的一个“字符”还可能是多个 Unicode scalar 组成的 grapheme。
+边界转换必须集中在 Buffer/SumTree 层，业务服务不能自己用字符串切片猜测。
+
+### Display Map
+
+Buffer 坐标和屏幕坐标之间使用分层转换：
+
+```text
+Buffer
+  → InlayMap
+  → FoldMap
+  → TabMap
+  → WrapMap
+  → BlockMap
+  → DisplayMap
+  → shaped glyph runs
+```
+
+每层拥有独立的坐标 newtype、snapshot 和 input/output summary。不能把 DisplayPoint 直接传给
+CRDT 或 LSP，也不能拿 UTF-16 column 当 UTF-8 byte offset。
+
+该边界参考 [Text Coordinate Systems](https://zed.dev/blog/zed-decoded-text-coordinate-systems)。
+
+## 文本渲染管线
+
+一个可维护的 renderer 分成四层：
+
+1. **Buffer**：文本、selection、CRDT Anchor 和版本；
+2. **Syntax**：Tree-sitter 增量 parse、语义 token、诊断；
+3. **Layout**：折叠、inlay、tab、soft wrap、bidi、grapheme、字体 shaping；
+4. **Paint**：可见行裁剪、背景、selection、glyph、光标、装饰和滚动条。
+
+语法 token 使用 byte ranges 并绑定 Buffer snapshot。绘制前经过 DisplayMap 转成可见 range；
+旧 snapshot 的高亮结果不能直接套到新文本 offset。
+
+### IBM Plex Mono
+
+编辑、diff、终端和行号统一使用 IBM Plex Mono。布局测量必须使用实际加载完成的 font face，
+不能先用 fallback 测量再永久缓存：
+
+- 等待 `document.fonts.ready` 后建立字体 metrics；
+- 监控缩放、DPR、字重和字体 fallback；
+- CJK、emoji 与缺失 glyph 使用明确 fallback chain；
+- 缓存 key 包含 font face、size、features、text 和 direction。
+
+### 品牌资源
+
+根目录 `assets` 中的品牌文件按场景使用：
+
+- `double-slash.svg`：简化产品 Logo，用于桌面标题栏、应用图标和空间有限的控件；
+- `combination.svg`：武当与 Zixiao Laboratories 主 Logo、标准字体的组合，用于登录页、
+  About、安装器和正式品牌页面；
+- `combination-Custom-Fonts.svg`：使用小篆字形的展示版本，只用于有足够尺寸的品牌物料，
+  不用于工具栏、按钮或需要快速识别的界面。
+
+Renderer 引用原始 asset，不重新手绘近似图形。组合 Logo 保持原比例和安全留白；主题切换不能
+通过 CSS filter 改变品牌色。
+
+### 语法高亮与 HeroUI
+
+Editor 不复制一套固定 RGB 主题。`globals.css` 定义：
+
+- `--editor-*`：背景、gutter、active line、selection；
+- `--syntax-*`：comment、keyword、string、number、function、type、property；
+- `--diff-*`：added 和 deleted 背景。
+
+这些变量从 HeroUI 的 `--background`、`--foreground`、`--accent`、`--success`、`--danger` 等
+语义 token 派生，因此 light/dark 主题、按钮、输入框、Agent 卡片和代码高亮保持一致。
+
+## vgpu 可行性结论
+
+本次调研基于 vgpu `0.6.0` 自带文档。vgpu 提供 WebGPU context、surface、offscreen target、
+draw/effect、frame 和 render bundle 等渲染抽象，适合作为未来 Paint 层后端，但它不是完整
+文本系统：
+
+- 不负责 Unicode segmentation、bidi、font fallback 或 glyph shaping；
+- 不提供编辑器 DisplayMap；
+- 不自动构建 glyph atlas；
+- Surface 适合最终 canvas，需采样或后处理时先画到 offscreen Target；
+- DPR 和 resize 应由 Surface 生命周期统一处理；
+- 静态 glyph/background draw 可以评估 render bundle，动态 selection/cursor 单独更新。
+
+因此不在第一版关键路径引入 vgpu。未来实验应先定义 renderer-neutral 的
+`VisibleLine → GlyphRun → PaintCommand`，再实现 WebGPU backend：
+
+```text
+VisibleLine snapshot
+  → platform text shaper
+  → glyph atlas allocation
+  → instance buffers
+  → vgpu draw pass
+  → Surface
+```
+
+实验必须验证：
+
+- IME composition 与 accessibility mirror；
+- mixed CJK/Latin/emoji/bidi shaping；
+- 1×、1.25×、1.5×、2× DPR 下的 glyph 清晰度；
+- atlas eviction 和 fallback；
+- 10 万行滚动、快速输入和 diff 装饰的 frame time；
+- device lost 后恢复；
+- 与 DOM/CodeMirror renderer 的像素和坐标 golden tests。
+
+如果 WebGPU renderer 不能保持 IME 与屏幕阅读器体验，则只把它用于 minimap、大型 diff
+overview 或背景装饰，不替换可访问的主文本输入面。
+
+## Apply Patch Diff 渲染
+
+Agent Tool Call 的状态机：
+
+```text
+proposed → applying → applied
+                    ↘ failed
+proposed → rejected
+```
+
+- `proposed`：显示预演后的 Change Set，不写 Workspace；
+- `applying`：锁定 expected revision，防止点击两次；
+- `applied`：固定 base/head revision，diff 永不随当前 buffer 漂移；
+- `failed`：显示结构化错误和仍可下载的原始 patch；
+- `rejected`：保留审计记录，不产生新 revision。
+
+Diff 默认折叠大段未变化文本，保留前后上下文；二进制文件、重命名、mode change 和
+“文件末尾无换行”使用独立标记。大文件 diff 在 Worker 中计算并按 hunk 虚拟化，不能在 React
+render 中同步计算完整 diff。
+
+## 演进顺序
+
+1. **现在**：CodeMirror 6 完成 Edit、syntax highlight、Agent unified diff 和主题对齐。
+2. **协作接入**：把 CodeMirror transaction 映射为 TextDelta，Presence 映射为 decoration。
+3. **语言能力**：Tree-sitter Worker、LSP UTF-16 adapter、诊断与 inlay。
+4. **数据结构实验**：实现独立 Rope/SumTree crate，与 CodeMirror 文档做 differential test。
+5. **渲染实验**：实现 renderer-neutral layout snapshot，再评估 vgpu Paint backend。
+6. **替换决策**：只有正确性、性能、IME 和 accessibility 全部达到门槛后才替换成熟内核。
+
+## 正确性与性能门槛
+
+- 输入 emoji、组合字符和 CJK 时，光标不能落入无效 grapheme 边界。
+- CRLF 文件 round-trip 不改变未编辑行的换行风格。
+- LSP UTF-16 range 与 Git UTF-8 byte range 有 property test。
+- 100 MB 文件打开、跳转和局部编辑不阻塞 UI 超过一个 frame budget。
+- Diff、syntax 和搜索都绑定 snapshot；异步结果过期后必须丢弃或 Anchor 重定位。
+- Renderer 只布局可见行与 overscan，不为完整文件创建 DOM 或 glyph instances。
+- Edit 与 Agent 打开同一 head version 时文本必须逐 byte 相同。

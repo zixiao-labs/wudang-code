@@ -8,7 +8,7 @@ export default defineConfig({
     preload: 'src/electron/preload.ts',
     renderer: 'src/renderer/index.html',
     mainFormat: 'esm',
-    preloadFormat: 'esm',
+    preloadFormat: 'cjs',
     nodeTarget: 'node22',
     autoRestart: true,
     minVersion: 41,
