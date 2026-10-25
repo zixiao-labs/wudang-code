@@ -1,14 +1,11 @@
 import {
   ArrowRight,
-  BranchesDown,
   Check,
   ChevronDown,
   ChevronRight,
   CircleCheck,
   Code,
   Comment,
-  Ellipsis,
-  File,
   FileCode,
   FolderOpen,
   Moon,
@@ -20,9 +17,11 @@ import { Button } from '@heroui/react/button'
 import { TextArea } from '@heroui/react/textarea'
 import { TextField } from '@heroui/react/textfield'
 import { useNavigate, useRouterState } from '@tanstack/react-router'
-import { type FormEvent, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import wudangMark from '../../../../../assets/double-slash.svg?url'
 import { CodeEditor, type CursorPosition } from './CodeEditor'
+import { ConnectionPanel } from './ConnectionPanel'
+import { useServerWorkspace } from './useServerWorkspace'
 
 type WorkspaceMode = 'edit' | 'agent'
 type Theme = 'light' | 'dark'
@@ -47,13 +46,12 @@ export function App() {
   const mode: WorkspaceMode = pathname === routeByMode.edit ? 'edit' : 'agent'
   const [theme, setTheme] = useState<Theme>(getInitialTheme)
   const [showDiff, setShowDiff] = useState(true)
-  const [prompt, setPrompt] = useState('')
   const [cursor, setCursor] = useState<CursorPosition>({
     line: 1,
     utf16Column: 1,
     utf8Offset: 0,
   })
-  const [source, setSource] = useState(updatedSource)
+  const workspace = useServerWorkspace()
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
@@ -67,15 +65,7 @@ export function App() {
   }
 
   const openAppliedChange = () => {
-    setSource(updatedSource)
     setMode('edit')
-  }
-
-  const sendPrompt = (event: FormEvent) => {
-    event.preventDefault()
-    if (prompt.trim()) {
-      setPrompt('')
-    }
   }
 
   return (
@@ -117,9 +107,9 @@ export function App() {
         </nav>
 
         <div className="titlebar-actions">
-          <span className="sync-state">
-            <span className="sync-dot" />
-            CRDT live
+          <span className="sync-state" role="status">
+            <span className="sync-dot" data-live={workspace.live} />
+            {workspace.live ? 'CRDT connected' : 'Offline'}
           </span>
           <span className="titlebar-divider" />
           <Button
@@ -136,27 +126,57 @@ export function App() {
       </header>
 
       <div className="workspace">
-        <ProjectSidebar />
+        <ConnectionPanel workspace={workspace} onOpen={() => setMode('edit')} />
 
         {mode === 'edit' ? (
-          <EditorWorkspace
-            cursor={cursor}
-            source={source}
-            onCursorChange={setCursor}
-            onSourceChange={setSource}
-          />
+          workspace.document ? (
+            <EditorWorkspace
+              cursor={cursor}
+              source={workspace.draft}
+              onCursorChange={setCursor}
+              onSourceChange={workspace.edit}
+              documentId={workspace.document.documentId}
+              version={workspace.document.version}
+              dirty={workspace.dirty}
+              readOnly={workspace.busy || !workspace.live}
+              canSave={
+                workspace.dirty && workspace.live && !workspace.busy && !workspace.remoteChanged
+              }
+              onSave={() => void workspace.save()}
+            />
+          ) : (
+            <section className="workspace-empty" aria-label="Open a server document">
+              <span className="workspace-empty-icon">
+                <FolderOpen aria-hidden />
+              </span>
+              <span className="eyebrow">A SHARED STARTING POINT</span>
+              <h1>Your workspace, connected.</h1>
+              <p>
+                Sign in to your server, then open a document from the sidebar.
+                <br />
+                Edits are saved to the server, not a demo buffer.
+              </p>
+              <div className="workspace-empty-steps">
+                <span>01 · Connect</span>
+                <ChevronRight aria-hidden />
+                <span>02 · Open</span>
+                <ChevronRight aria-hidden />
+                <span>03 · Collaborate</span>
+              </div>
+            </section>
+          )
         ) : (
           <section className="agent-mode" aria-label="Agent workspace">
             <div className="thread-pane">
               <div className="thread-header">
                 <div className="pane-title">
-                  <span className="eyebrow">THREAD · T-01J8K</span>
+                  <span className="eyebrow">DEMO THREAD · T-01J8K</span>
                   <h1>Stream collaborative edits</h1>
-                  <p>Implementing a reviewable CRDT workflow</p>
+                  <p>UI preview · Agent Run service is not connected</p>
                 </div>
                 <span className="run-state">
                   <CircleCheck aria-hidden />
-                  Run succeeded
+                  Demo
                 </span>
               </div>
 
@@ -223,16 +243,11 @@ export function App() {
                 </article>
               </div>
 
-              <form className="composer" onSubmit={sendPrompt}>
-                <TextField
-                  aria-label="Message the agent"
-                  className="composer-field"
-                  value={prompt}
-                  onChange={setPrompt}
-                >
+              <form className="composer" onSubmit={(event) => event.preventDefault()}>
+                <TextField aria-label="Message the agent" className="composer-field" isDisabled>
                   <TextArea
                     className="composer-input"
-                    placeholder="Ask Wudang to change, explain, or verify…"
+                    placeholder="Agent runs are not available on this server yet"
                     rows={3}
                     variant="secondary"
                   />
@@ -249,16 +264,11 @@ export function App() {
                     >
                       <Paperclip aria-hidden />
                     </Button>
-                    <span>Workspace rev 128</span>
+                    <span>Demo · not sent to server</span>
                   </div>
                   <div className="send-group">
                     <span>⌘ ↵</span>
-                    <Button
-                      className="send-button"
-                      isDisabled={!prompt.trim()}
-                      size="sm"
-                      type="submit"
-                    >
+                    <Button className="send-button" isDisabled size="sm" type="submit">
                       Send
                       <ArrowRight aria-hidden />
                     </Button>
@@ -279,77 +289,67 @@ export function App() {
   )
 }
 
-function ProjectSidebar() {
-  return (
-    <aside className="project-sidebar">
-      <div className="sidebar-heading">
-        <span>EXPLORER</span>
-        <Button
-          aria-label="More project actions"
-          className="sidebar-action"
-          isIconOnly
-          size="sm"
-          variant="ghost"
-        >
-          <Ellipsis aria-hidden />
-        </Button>
-      </div>
-      <div className="repository-name">
-        <ChevronDown aria-hidden />
-        <strong>wudang</strong>
-        <span className="repository-visibility">LOCAL</span>
-      </div>
-      <nav aria-label="Project files" className="file-tree">
-        <FileItem depth={0} label="client" kind="folder" />
-        <FileItem depth={1} label="apps" kind="folder" />
-        <FileItem depth={2} label="desktop" kind="folder" />
-        <FileItem active depth={3} label="App.tsx" kind="tsx" />
-        <FileItem depth={3} label="CodeEditor.tsx" kind="tsx" />
-        <FileItem depth={3} label="globals.css" kind="css" />
-        <FileItem depth={0} label="proto" kind="folder" />
-        <FileItem depth={1} label="auth.proto" kind="proto" />
-        <FileItem depth={1} label="collab.proto" kind="proto" />
-        <FileItem depth={1} label="sync.proto" kind="proto" />
-        <FileItem depth={0} label="docs" kind="folder" />
-      </nav>
-      <div className="sidebar-footer">
-        <span>
-          <BranchesDown aria-hidden />
-          main
-        </span>
-        <span className="change-count">1 change</span>
-      </div>
-    </aside>
-  )
-}
-
 interface EditorWorkspaceProps {
   cursor: CursorPosition
   source: string
   onCursorChange: (cursor: CursorPosition) => void
   onSourceChange: (source: string) => void
+  documentId: string
+  version: string
+  dirty: boolean
+  readOnly: boolean
+  canSave: boolean
+  onSave: () => void
 }
 
-function EditorWorkspace({ cursor, source, onCursorChange, onSourceChange }: EditorWorkspaceProps) {
+function EditorWorkspace({
+  cursor,
+  source,
+  onCursorChange,
+  onSourceChange,
+  documentId,
+  version,
+  dirty,
+  readOnly,
+  canSave,
+  onSave,
+}: EditorWorkspaceProps) {
   return (
-    <section className="editor-pane" aria-label="Edit workspace">
+    <section
+      className="editor-pane"
+      aria-label="Edit workspace"
+      onKeyDown={(event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key === 's') {
+          event.preventDefault()
+          if (canSave) onSave()
+        }
+      }}
+    >
       <div className="tab-strip">
         <div className="file-tab active">
           <FileCode aria-hidden />
-          <span>App.tsx</span>
-          <span className="dirty-indicator" title="Unsaved changes" />
+          <span>{documentId}</span>
+          {dirty && <span className="dirty-indicator" title="Unsaved changes" />}
         </div>
         <div className="editor-breadcrumbs" aria-label="File location">
-          <span>client</span>
+          <span>Server document</span>
           <ChevronRight aria-hidden />
-          <span>desktop</span>
-          <ChevronRight aria-hidden />
-          <strong>App.tsx</strong>
+          <strong>{documentId}</strong>
         </div>
+        <Button
+          className="document-save"
+          size="sm"
+          variant="secondary"
+          isDisabled={!canSave}
+          onPress={onSave}
+        >
+          Save
+        </Button>
       </div>
       <div className="editor-content">
         <CodeEditor
-          ariaLabel="App.tsx source editor"
+          ariaLabel={`${documentId} source editor`}
+          readOnly={readOnly}
           value={source}
           onChange={onSourceChange}
           onCursorChange={onCursorChange}
@@ -358,7 +358,7 @@ function EditorWorkspace({ cursor, source, onCursorChange, onSourceChange }: Edi
       <footer className="statusbar">
         <span className="status-ready">
           <CircleCheck aria-hidden />
-          Workspace rev 128
+          {dirty ? 'Unsaved draft' : 'Saved on server'} · {version.slice(0, 10)}
         </span>
         <span className="statusbar-spacer" />
         <span>UTF-8 {cursor.utf8Offset}</span>
@@ -384,7 +384,7 @@ function ReviewPane({ showDiff, onOpenAppliedChange, onShowDiff }: ReviewPanePro
         <>
           <div className="review-header">
             <div className="pane-title">
-              <span className="eyebrow">CHANGE SET · CS-0182</span>
+              <span className="eyebrow">DEMO CHANGE SET · CS-0182</span>
               <h2>Review applied patch</h2>
               <p>App.tsx · Base rev 127</p>
             </div>
@@ -395,7 +395,7 @@ function ReviewPane({ showDiff, onOpenAppliedChange, onShowDiff }: ReviewPanePro
               </Button>
               <Button size="sm" variant="secondary" onPress={onOpenAppliedChange}>
                 <Code aria-hidden />
-                Open in Edit
+                Go to Edit
               </Button>
             </div>
           </div>
@@ -438,40 +438,6 @@ function ReviewPane({ showDiff, onOpenAppliedChange, onShowDiff }: ReviewPanePro
         </div>
       )}
     </div>
-  )
-}
-
-interface FileItemProps {
-  active?: boolean
-  depth: number
-  kind: 'folder' | 'tsx' | 'css' | 'proto'
-  label: string
-}
-
-function FileItem({ active = false, depth, kind, label }: FileItemProps) {
-  const fileIcon =
-    kind === 'folder' ? (
-      <>
-        <ChevronDown aria-hidden className="tree-chevron" />
-        <FolderOpen aria-hidden className="folder-icon" />
-      </>
-    ) : kind === 'tsx' ? (
-      <FileCode aria-hidden />
-    ) : (
-      <File aria-hidden />
-    )
-
-  return (
-    <button
-      aria-current={active ? 'page' : undefined}
-      className={`file-item ${active ? 'active' : ''}`}
-      style={{ paddingLeft: `${10 + depth * 14}px` }}
-      type="button"
-    >
-      <span className={`file-symbol ${kind}`}>{fileIcon}</span>
-      <span className="file-label">{label}</span>
-      {active ? <span className="active-file-marker" /> : null}
-    </button>
   )
 }
 

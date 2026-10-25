@@ -2,6 +2,6 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/')({
   beforeLoad: () => {
-    throw redirect({ to: '/agent', replace: true })
+    throw redirect({ to: '/edit', replace: true })
   },
 })

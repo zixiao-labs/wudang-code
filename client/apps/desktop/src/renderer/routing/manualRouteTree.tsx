@@ -9,7 +9,7 @@ const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   beforeLoad: () => {
-    throw redirect({ to: '/agent', replace: true })
+    throw redirect({ to: '/edit', replace: true })
   },
 })
 

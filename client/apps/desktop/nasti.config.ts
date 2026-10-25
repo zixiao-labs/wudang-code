@@ -22,6 +22,6 @@ export default defineConfig({
     nodeTarget: 'node22',
     autoRestart: true,
     minVersion: 41,
-    external: ['electron'],
+    external: ['electron', '@grpc/grpc-js', '@grpc/proto-loader'],
   },
 })
