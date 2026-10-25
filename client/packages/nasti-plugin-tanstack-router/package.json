@@ -1,0 +1,23 @@
+{
+  "name": "@wudang/nasti-plugin-tanstack-router",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tanstack/router-generator": "1.167.46"
+  },
+  "devDependencies": {
+    "@nasti-toolchain/nasti": "^2.7.0",
+    "@types/node": "^24.0.0",
+    "typescript": "^7.0.2"
+  },
+  "peerDependencies": {
+    "@nasti-toolchain/nasti": ">=2.7.0"
+  }
+}

@@ -1,9 +1,10 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { App } from './App'
+import { RouterProvider } from '@tanstack/react-router'
 import ibmPlexMono400 from '@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2?url'
 import ibmPlexMono500 from '@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2?url'
 import ibmPlexMono600 from '@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-600-normal.woff2?url'
+import { router, routerMode } from './routing/router'
 import '../../globals.css'
 
 const fontStyles = document.createElement('style')
@@ -33,9 +34,10 @@ fontStyles.textContent = `
   }
 `
 document.head.append(fontStyles)
+document.documentElement.dataset.routerMode = routerMode
 
 createRoot(document.getElementById('app')!).render(
   <StrictMode>
-    <App />
+    <RouterProvider router={router} />
   </StrictMode>,
 )
