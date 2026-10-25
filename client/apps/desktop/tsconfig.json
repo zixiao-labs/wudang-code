@@ -3,5 +3,5 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["src", "tests", "nasti.config.ts"]
+  "include": ["src", "tests", "nasti.config.ts", "lightning.config.ts"]
 }

@@ -10,6 +10,11 @@ async function createWindow() {
   const window = new BrowserWindow({
     width: 1200,
     height: 800,
+    minWidth: 720,
+    minHeight: 520,
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hidden' as const, trafficLightPosition: { x: 14, y: 12 } }
+      : {}),
     webPreferences: {
       preload: path.resolve(__dirname, 'preload.cjs'),
       contextIsolation: true,

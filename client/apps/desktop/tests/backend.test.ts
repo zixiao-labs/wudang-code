@@ -1,14 +1,13 @@
-import assert from 'node:assert/strict'
-import { after, before, test } from 'node:test'
+import { afterAll, beforeAll, expect, test } from '@lightning-js/lightning'
 import { Server, ServerCredentials, status } from '@grpc/grpc-js'
 import { fromJSON, type ServiceDefinition } from '@grpc/proto-loader'
 import schema from '../src/electron/protocol'
 import { Backend, parseEndpoint, replacementEdit } from '../src/electron/backend'
 
 test('only literal loopback addresses may carry plaintext credentials', () => {
-  assert.equal(parseEndpoint('http://127.0.0.1:50051').target, '127.0.0.1:50051')
-  assert.equal(parseEndpoint('http://[::1]:50051').tls, false)
-  assert.equal(parseEndpoint('https://wudang.example:443').tls, true)
+  expect(parseEndpoint('http://127.0.0.1:50051').target).toBe('127.0.0.1:50051')
+  expect(parseEndpoint('http://[::1]:50051').tls).toBe(false)
+  expect(parseEndpoint('https://wudang.example:443').tls).toBe(true)
   for (const endpoint of [
     'http://localhost:50051',
     'http://192.168.1.4:50051',
@@ -19,7 +18,7 @@ test('only literal loopback addresses may carry plaintext credentials', () => {
     'ftp://example.com',
     'not a URL',
   ])
-    assert.throws(() => parseEndpoint(endpoint))
+    expect(() => parseEndpoint(endpoint)).toThrow()
 })
 
 test('replacement ranges are UTF-8 boundaries, including non-BMP code points', () => {
@@ -38,8 +37,8 @@ test('replacement ranges are UTF-8 boundaries, including non-BMP code points', (
       Buffer.from(edit.insertedText),
       bytes.subarray(Number(edit.endUtf8)),
     ]).toString('utf8')
-    assert.equal(result, after)
-    assert.equal(result.includes('\uFFFD'), false)
+    expect(result).toBe(after)
+    expect(result).not.toContain('\uFFFD')
   }
 })
 
@@ -59,7 +58,7 @@ const session = (expires: number) => ({
   accessTokenExpiresAt: { seconds: String(expires) },
 })
 
-before(async () => {
+beforeAll(async () => {
   server.addService(protocol['wudang.auth.v1.AuthService'] as ServiceDefinition, {
     loginLocal: (_call: unknown, callback: Function) => callback(null, session(0)),
     refreshSession: (_call: unknown, callback: Function) => {
@@ -85,34 +84,34 @@ before(async () => {
   endpoint = `http://127.0.0.1:${port}`
 })
 
-after(() => server.forceShutdown())
+afterAll(() => server.forceShutdown())
 
 test('sessions stay private and parallel authenticated calls share one refresh', async () => {
   const backend = new Backend()
   try {
-    assert.deepEqual(
+    expect(
       await backend.login({
         endpoint,
         email: user.email,
         password: 'test-password',
         register: false,
       }),
-      user,
-    )
-    assert.equal(JSON.stringify(backend.session()).includes('private-'), false)
+    ).toEqual(user)
+    expect(JSON.stringify(backend.session())).not.toContain('private-')
     await Promise.all([
       backend.listRepositories({ organizationId: 'org' }),
       backend.listRepositories({ organizationId: 'org' }),
     ])
-    assert.equal(rotations, 1)
-    assert.equal(receivedAuthorization, 'Bearer private-access')
-    await assert.rejects(
-      backend.createRepository({ organizationId: 'org', name: 'repo' }),
+    expect(rotations).toBe(1)
+    expect(receivedAuthorization).toBe('Bearer private-access')
+    await expect(backend.createRepository({ organizationId: 'org', name: 'repo' })).rejects.toThrow(
       /Registration required/,
     )
     await backend.logout()
-    assert.equal(backend.session().user, null)
-    await assert.rejects(backend.listRepositories({ organizationId: 'org' }), /Sign in first/)
+    expect(backend.session().user).toBe(null)
+    await expect(backend.listRepositories({ organizationId: 'org' })).rejects.toThrow(
+      /Sign in first/,
+    )
   } finally {
     backend.dispose()
   }

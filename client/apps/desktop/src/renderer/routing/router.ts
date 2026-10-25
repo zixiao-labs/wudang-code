@@ -18,7 +18,7 @@ function createFileRouter() {
 export type ApplicationRouter = ReturnType<typeof createFileRouter>
 
 function createManualRouter(): ApplicationRouter {
-  // Both trees implement the same route contract (`/`, `/agent`, `/edit`).
+  // Both trees implement the same route contract (`/`, `/agent`, `/edit`, `/settings`).
   // The generated tree remains the registered type source for file-route DX.
   return createRouter({
     routeTree: manualRouteTree,

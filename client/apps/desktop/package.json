@@ -9,8 +9,9 @@
     "build": "pnpm protocol:generate && nasti electron-build",
     "protocol:generate": "node scripts/generate-protocol.mjs",
     "protocol:check": "node scripts/generate-protocol.mjs --check",
-    "test": "tsx --test tests/*.test.ts",
-    "test:e2e": "tsx --test tests/*.e2e.ts",
+    "test": "lightning run --project unit",
+    "test:ui": "lightning run --project ui",
+    "test:e2e": "lightning run --project integration",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

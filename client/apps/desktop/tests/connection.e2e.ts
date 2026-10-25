@@ -6,7 +6,7 @@ import { createServer } from 'node:net'
 import { userInfo } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { test } from 'node:test'
+import { test } from '@lightning-js/lightning'
 import { setTimeout as delay } from 'node:timers/promises'
 import { _electron as electron } from 'playwright'
 import { Backend } from '../src/electron/backend'
@@ -163,7 +163,10 @@ test(
         env: electronEnv,
       })
       const page = await application.firstWindow()
-      await page.getByRole('heading', { name: 'Connect to Wudang' }).waitFor()
+      await page.getByRole('region', { name: 'Welcome', exact: true }).waitFor()
+      assert.equal(await page.getByLabel('Password', { exact: true }).count(), 0)
+      await page.getByRole('button', { name: 'Open settings', exact: true }).click()
+      await page.getByRole('heading', { name: 'Sign in to Wudang' }).waitFor()
       if (process.env.WUDANG_E2E_SCREENSHOT_DIR) {
         await page.screenshot({
           path: path.join(process.env.WUDANG_E2E_SCREENSHOT_DIR, 'connect.png'),
@@ -173,9 +176,15 @@ test(
       await page.getByLabel('Email', { exact: true }).fill(account.email)
       await page.getByLabel('Password', { exact: true }).fill(account.password)
       await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+      await page.getByRole('button', { name: 'Sign out', exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Close settings', exact: true }).click()
+      await page.getByRole('button', { name: 'Open another document', exact: true }).click()
       await page.getByLabel('Workspace ID', { exact: true }).fill(document.workspaceId)
       await page.getByLabel('Document ID', { exact: true }).fill(document.documentId)
-      await page.getByRole('button', { name: 'Open document', exact: true }).click()
+      await page
+        .getByRole('dialog')
+        .getByRole('button', { name: 'Open document', exact: true })
+        .click()
       const editor = page.getByRole('textbox', {
         name: `${document.documentId} source editor`,
         exact: true,
@@ -192,8 +201,12 @@ test(
       await page.getByRole('status').filter({ hasText: 'Remote changes arrived' }).waitFor()
       assert.match((await editor.textContent()) ?? '', /unsaved local draft/)
       assert.equal(await page.getByRole('button', { name: 'Save', exact: true }).isDisabled(), true)
+      await page.getByRole('button', { name: 'Reopen document', exact: true }).click()
       page.once('dialog', (dialog) => void dialog.accept())
-      await page.getByRole('button', { name: 'Open document', exact: true }).click()
+      await page
+        .getByRole('dialog')
+        .getByRole('button', { name: 'Open document', exact: true })
+        .click()
       await until(async () => (await editor.textContent())?.includes('remote update'))
       await editor.press('ControlOrMeta+End')
       await editor.press('End')
@@ -204,17 +217,18 @@ test(
       )
       await page.setViewportSize({ width: 1200, height: 800 })
       if (process.env.WUDANG_E2E_SCREENSHOT_DIR) {
-        await page.locator('.connection-panel').evaluate((panel) => {
-          panel.scrollTop = 0
-        })
-        if (await page.getByRole('button', { name: 'Switch to dark theme' }).count()) {
-          await page.getByRole('button', { name: 'Switch to dark theme' }).click()
-        }
+        await page.getByRole('button', { name: 'Open settings', exact: true }).click()
+        await page.getByRole('button', { name: 'Appearance', exact: true }).click()
+        await page.getByRole('button', { name: 'Dark', exact: true }).click()
+        await page.getByRole('button', { name: 'Close settings', exact: true }).click()
         await page.screenshot({
           path: path.join(process.env.WUDANG_E2E_SCREENSHOT_DIR, 'connected-dark.png'),
           animations: 'disabled',
         })
-        await page.getByRole('button', { name: 'Switch to light theme' }).click()
+        await page.getByRole('button', { name: 'Open settings', exact: true }).click()
+        await page.getByRole('button', { name: 'Appearance', exact: true }).click()
+        await page.getByRole('button', { name: 'Light', exact: true }).click()
+        await page.getByRole('button', { name: 'Close settings', exact: true }).click()
         await page.screenshot({
           path: path.join(process.env.WUDANG_E2E_SCREENSHOT_DIR, 'connected-light.png'),
           animations: 'disabled',
@@ -229,6 +243,7 @@ test(
       await page.getByRole('status').filter({ hasText: 'Offline' }).waitFor()
       assert.match((await editor.textContent()) ?? '', /preserved on disconnect/)
       assert.equal(await editor.getAttribute('contenteditable'), 'false')
+      await page.getByRole('button', { name: 'Open settings', exact: true }).click()
       page.once('dialog', (dialog) => void dialog.accept())
       await page.getByRole('button', { name: 'Sign out', exact: true }).click()
       await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor()

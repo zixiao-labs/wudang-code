@@ -35,6 +35,9 @@ fontStyles.textContent = `
 `
 document.head.append(fontStyles)
 document.documentElement.dataset.routerMode = routerMode
+document.documentElement.dataset.nativeMac = String(
+  Boolean(window.desktop) && /Mac/.test(navigator.platform),
+)
 
 createRoot(document.getElementById('app')!).render(
   <StrictMode>

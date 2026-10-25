@@ -65,15 +65,17 @@ export function useServerWorkspace() {
   }, [])
 
   async function run(action: (api: NonNullable<Window['desktop']>) => Promise<void>) {
-    if (!window.desktop) return
+    if (!window.desktop) return false
     setState((current) => ({ ...current, busy: true, error: '' }))
     try {
       await action(window.desktop)
+      return true
     } catch (error) {
       setState((current) => ({
         ...current,
         error: error instanceof Error ? error.message : 'Request failed.',
       }))
+      return false
     } finally {
       setState((current) => ({ ...current, busy: false }))
     }

@@ -23,8 +23,18 @@ const editRoute = createRoute({
   path: '/edit',
 })
 
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings',
+})
+
 /**
  * Code-based equivalent of the generated route tree. Keep this contract in
  * sync with `routes/` so hosts can opt out of file route generation.
  */
-export const manualRouteTree = rootRoute.addChildren([indexRoute, agentRoute, editRoute])
+export const manualRouteTree = rootRoute.addChildren([
+  indexRoute,
+  agentRoute,
+  editRoute,
+  settingsRoute,
+])

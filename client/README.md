@@ -15,7 +15,9 @@ access token or refresh token.
    pnpm dev
    ```
 
-3. Sign in (or create a local account) in the sidebar. The default server is
+3. Open **Settings → Account** from the gear icon, the account button at the bottom
+   of the sidebar, or `Cmd/Ctrl+,`. Sign in or create a local account there.
+   The default server is
    `http://127.0.0.1:50051`. To change the initial address:
 
    ```sh
@@ -26,8 +28,10 @@ access token or refresh token.
    internal certificate authority, supply `WUDANG_TLS_CA_PATH=/path/to/ca.pem` to
    the host. Plaintext is accepted only for literal `127.0.0.1` and `[::1]`.
 
-4. Supply an organization UUID to list or create hosted repositories. Then open a
-   document using workspace and document IDs. Using the same document ID on two
+4. In **Settings → Workspace**, supply an organization UUID to list or create
+   hosted repositories. Close Settings to return to your previous view. Use
+   **Open document** (`Cmd/Ctrl+O`) to enter workspace and document IDs.
+   Using the same document ID on two
    desktops opens the same server document; a new ID starts empty. These IDs are
    server resource identifiers, **not local file paths**.
 5. Edit and press **Save** or `Cmd/Ctrl+S`. The host sends a UTF-8 delta over
@@ -46,9 +50,10 @@ access token or refresh token.
   credentials are still cleared and the revocation failure is displayed.
 - The server does not yet expose workspace file-tree/checkout APIs. Repository
   listing does not imply that hosted Git files have been imported into documents.
-- Agent threads, runs, tool calls and review diffs remain clearly labelled UI
-  previews. The Send action is disabled; no prompts are silently discarded or
-  sent to an unrelated RPC. OAuth is not implemented by the server.
+- Agent runs, tool calls and review diffs are not connected. The Threads view is
+  an empty preview, not a fabricated conversation or execution history.
+  The Send action is disabled; no prompts are silently discarded or sent to an
+  unrelated RPC. OAuth is not implemented by the server.
 - Browser-only previews cannot access the native host and show an explicit notice.
 - This connection work does not add organization/document authorization to the
   backend. Do not treat the existing authenticated MVP as a multi-tenant service.
@@ -66,7 +71,16 @@ pnpm typecheck
 pnpm --filter @wudang/desktop protocol:check
 pnpm --filter @wudang/desktop test
 pnpm build
+pnpm --filter @wudang/desktop test:ui
 ```
+
+Tests use `@lightning-js/lightning`, with separate `unit`, `ui`, and `integration`
+projects. The UI suite exercises the production renderer in Playwright Chromium
+with an explicitly stubbed desktop bridge; install it with
+`pnpm --filter @wudang/desktop exec playwright install chromium`.
+It covers settings navigation, account forms, document opening, errors, draft
+preservation, theme persistence, and narrow-window layouts without a database.
+It does not replace the native IPC/server integration test below.
 
 The integration test needs PostgreSQL tools (`initdb`, `postgres`, `pg_isready`)
 on `PATH`, plus the built portable Rust server and Electron:
